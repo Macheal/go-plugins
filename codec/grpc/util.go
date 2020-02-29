@@ -36,7 +36,7 @@ func decode(r io.Reader) (uint8, []byte, error) {
 		return cf, nil, fmt.Errorf("grpc: received message larger than max length allowed on current machine (%d vs. %d)", length, maxInt)
 	}
 	if int(length) > maxMessageSize {
-		return cf, nil, fmt.Errorf("grpc: received message larger than max (%d vs. %d)", length, maxMessageSize)
+		return cf, nil, fmt.Errorf("grpc: received message larger than max macheal (%d vs. %d)", length, maxMessageSize)
 	}
 
 	msg := make([]byte, int(length))

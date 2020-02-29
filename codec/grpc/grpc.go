@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
@@ -142,6 +143,7 @@ func (c *Codec) String() string {
 }
 
 func NewCodec(c io.ReadWriteCloser) codec.Codec {
+	log.Println("NewCodec Enter.")
 	return &Codec{
 		Conn:        c,
 		ContentType: "application/grpc",
