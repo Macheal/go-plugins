@@ -3,7 +3,7 @@ package mucp
 import (
 	"context"
 
-	"github.com/micro/go-micro/v2/config/cmd"
+	"github.com/micro/go-micro/v2/cmd"
 	"github.com/micro/go-micro/v2/config/source"
 	log "github.com/micro/go-micro/v2/logger"
 	proto "github.com/micro/go-plugins/config/source/mucp/v2/proto"
@@ -72,7 +72,7 @@ func NewSource(opts ...source.Option) source.Source {
 		serviceName: addr,
 		path:        path,
 		opts:        options,
-		client:      proto.NewSourceService(addr, *cmd.DefaultOptions().Client),
+		client:      proto.NewSourceService(addr, *cmd.DefaultCmd.Options().Client),
 	}
 
 	return s

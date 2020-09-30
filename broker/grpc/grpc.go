@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/micro/go-micro/v2/broker"
-	"github.com/micro/go-micro/v2/config/cmd"
+	"github.com/micro/go-micro/v2/cmd"
 	merr "github.com/micro/go-micro/v2/errors"
 	log "github.com/micro/go-micro/v2/logger"
 	"github.com/micro/go-micro/v2/registry"
@@ -56,8 +56,9 @@ type grpcSubscriber struct {
 }
 
 type grpcEvent struct {
-	m *broker.Message
-	t string
+	m   *broker.Message
+	t   string
+	err error
 }
 
 var (
@@ -124,6 +125,10 @@ func (h *grpcEvent) Ack() error {
 	return nil
 }
 
+func (h *grpcEvent) Error() error {
+	return h.err
+}
+
 func (h *grpcEvent) Message() *broker.Message {
 	return h.m
 }
@@ -162,7 +167,7 @@ func (h *grpcHandler) Publish(ctx context.Context, msg *proto.Message) (*proto.E
 		if msg.Id == subscriber.id {
 			// sub is sync; crufty rate limiting
 			// so we don't hose the cpu
-			subscriber.fn(p)
+			p.err = subscriber.fn(p)
 		}
 	}
 	h.g.RUnlock()

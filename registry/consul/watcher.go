@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/api/watch"
 	"github.com/micro/go-micro/v2/registry"
+	regutil "github.com/micro/go-micro/v2/util/registry"
 )
 
 type consulWatcher struct {
@@ -39,7 +40,10 @@ func newConsulWatcher(cr *consulRegistry, opts ...registry.WatchOption) (registr
 		services: make(map[string][]*registry.Service),
 	}
 
-	wp, err := watch.Parse(map[string]interface{}{"type": "services"})
+	wp, err := watch.Parse(map[string]interface{}{
+		"type":  "services",
+		"stale": watchStale(wo.Context),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +167,7 @@ func (cw *consulWatcher) serviceHandler(idx uint64, data interface{}) {
 
 			// it's an update rather than creation
 			if len(nodes) > 0 {
-				delService := registry.CopyService(oldService)
+				delService := regutil.CopyService(oldService)
 				delService.Nodes = nodes
 				cw.next <- &registry.Result{Action: "delete", Service: delService}
 			}
@@ -206,6 +210,7 @@ func (cw *consulWatcher) handle(idx uint64, data interface{}) {
 		wp, err := watch.Parse(map[string]interface{}{
 			"type":    "service",
 			"service": service,
+			"stale":   watchStale(cw.wo.Context),
 		})
 		if err == nil {
 			wp.Handler = cw.serviceHandler

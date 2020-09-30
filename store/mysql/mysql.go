@@ -11,11 +11,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-// DefaultNamespace is the namespace that the sql store
-// will use if no namespace is provided.
 var (
-	DefaultNamespace = "micro"
-	DefaultPrefix    = "micro"
+	// DefaultDatabase is the database that the sql store will use if no database is provided.
+	DefaultDatabase = "micro"
+	// DefaultTable is the table that the sql store will use if no table is provided.
+	DefaultTable = "micro"
 )
 
 type sqlStore struct {
@@ -37,8 +37,16 @@ func (s *sqlStore) Init(opts ...store.Option) error {
 	return s.configure()
 }
 
+func (s *sqlStore) Options() store.Options {
+	return s.options
+}
+
+func (s *sqlStore) Close() error {
+	return s.db.Close()
+}
+
 // List all the known records
-func (s *sqlStore) List() ([]*store.Record, error) {
+func (s *sqlStore) List(opts ...store.ListOption) ([]string, error) {
 	rows, err := s.db.Query(fmt.Sprintf("SELECT `key`, value, expiry FROM %s.%s;", s.database, s.table))
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -48,20 +56,20 @@ func (s *sqlStore) List() ([]*store.Record, error) {
 	}
 	defer rows.Close()
 
-	var records []*store.Record
+	var records []string
 	var cachedTime time.Time
 
 	for rows.Next() {
 		record := &store.Record{}
 		if err := rows.Scan(&record.Key, &record.Value, &cachedTime); err != nil {
-			return records, err
+			return nil, err
 		}
 
 		if cachedTime.Before(time.Now()) {
 			// record has expired
 			go s.Delete(record.Key)
 		} else {
-			records = append(records, record)
+			records = append(records, record.Key)
 		}
 	}
 	rowErr := rows.Close()
@@ -70,7 +78,7 @@ func (s *sqlStore) List() ([]*store.Record, error) {
 		return records, rowErr
 	}
 	if err := rows.Err(); err != nil {
-		return records, err
+		return nil, err
 	}
 	return records, nil
 }
@@ -107,7 +115,7 @@ func (s *sqlStore) Read(key string, opts ...store.ReadOption) ([]*store.Record, 
 }
 
 // Write records
-func (s *sqlStore) Write(r *store.Record) error {
+func (s *sqlStore) Write(r *store.Record, opts ...store.WriteOption) error {
 	timeCached := time.Now().Add(r.Expiry)
 	_, err := s.writePrepare.Exec(r.Key, r.Value, timeCached, r.Value, timeCached)
 	if err != nil {
@@ -118,7 +126,7 @@ func (s *sqlStore) Write(r *store.Record) error {
 }
 
 // Delete records with keys
-func (s *sqlStore) Delete(key string) error {
+func (s *sqlStore) Delete(key string, opts ...store.DeleteOption) error {
 	result, err := s.deletePrepare.Exec(key)
 	if err != nil {
 		return err
@@ -164,17 +172,17 @@ func (s *sqlStore) configure() error {
 		nodes = []string{"localhost:3306"}
 	}
 
-	namespace := s.options.Namespace
-	if len(namespace) == 0 {
-		namespace = DefaultNamespace
+	database := s.options.Database
+	if len(database) == 0 {
+		database = DefaultDatabase
 	}
 
-	prefix := s.options.Prefix
-	if len(prefix) == 0 {
-		prefix = DefaultPrefix
+	table := s.options.Table
+	if len(table) == 0 {
+		table = DefaultTable
 	}
 
-	for _, r := range namespace {
+	for _, r := range database {
 		if !unicode.IsLetter(r) {
 			return errors.New("store.namespace must only contain letters")
 		}
@@ -197,8 +205,8 @@ func (s *sqlStore) configure() error {
 
 	// save the values
 	s.db = db
-	s.database = namespace
-	s.table = prefix
+	s.database = database
+	s.table = table
 
 	// initialise the database
 	return s.initDB()
