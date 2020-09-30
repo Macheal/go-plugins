@@ -4,8 +4,9 @@ go 1.13
 
 require (
 	github.com/google/uuid v1.1.1
-	github.com/micro/go-micro/v2 v2.1.2
+	github.com/micro/go-micro/v2 v2.9.1-0.20200716153311-f9bf56239306
 	github.com/nats-io/nats-streaming-server v0.16.2 // indirect
 	github.com/nats-io/stan.go v0.6.0
-	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 )
+
+replace github.com/coreos/etcd => github.com/ozonru/etcd v3.3.20-grpc1.27-origmodule+incompatible

@@ -3,13 +3,14 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/Shopify/sarama"
 	"github.com/google/uuid"
 	"github.com/micro/go-micro/v2/broker"
 	"github.com/micro/go-micro/v2/codec/json"
-	"github.com/micro/go-micro/v2/config/cmd"
+	"github.com/micro/go-micro/v2/cmd"
 	log "github.com/micro/go-micro/v2/logger"
 )
 
@@ -21,8 +22,9 @@ type kBroker struct {
 
 	sc []sarama.Client
 
-	scMutex sync.Mutex
-	opts    broker.Options
+	connected bool
+	scMutex   sync.RWMutex
+	opts      broker.Options
 }
 
 type subscriber struct {
@@ -33,6 +35,7 @@ type subscriber struct {
 
 type publication struct {
 	t    string
+	err  error
 	cg   sarama.ConsumerGroup
 	km   *sarama.ConsumerMessage
 	m    *broker.Message
@@ -56,6 +59,10 @@ func (p *publication) Ack() error {
 	return nil
 }
 
+func (p *publication) Error() error {
+	return p.err
+}
+
 func (s *subscriber) Options() broker.SubscribeOptions {
 	return s.opts
 }
@@ -76,9 +83,17 @@ func (k *kBroker) Address() string {
 }
 
 func (k *kBroker) Connect() error {
-	if k.c != nil {
+	if k.isConnected() {
 		return nil
 	}
+
+	k.scMutex.Lock()
+	if k.c != nil {
+		k.connected = true
+		k.scMutex.Unlock()
+		return nil
+	}
+	k.scMutex.Unlock()
 
 	pconfig := k.getBrokerConfig()
 	// For implementation reasons, the SyncProducer requires
@@ -92,22 +107,25 @@ func (k *kBroker) Connect() error {
 		return err
 	}
 
-	k.c = c
-
 	p, err := sarama.NewSyncProducerFromClient(c)
 	if err != nil {
 		return err
 	}
 
-	k.p = p
 	k.scMutex.Lock()
-	defer k.scMutex.Unlock()
+	k.c = c
+	k.p = p
 	k.sc = make([]sarama.Client, 0)
+	k.connected = true
+	k.scMutex.Unlock()
 
 	return nil
 }
 
 func (k *kBroker) Disconnect() error {
+	if !k.isConnected() {
+		return nil
+	}
 	k.scMutex.Lock()
 	defer k.scMutex.Unlock()
 	for _, client := range k.sc {
@@ -115,7 +133,11 @@ func (k *kBroker) Disconnect() error {
 	}
 	k.sc = nil
 	k.p.Close()
-	return k.c.Close()
+	if err := k.c.Close(); err != nil {
+		return err
+	}
+	k.connected = false
+	return nil
 }
 
 func (k *kBroker) Init(opts ...broker.Option) error {
@@ -136,19 +158,31 @@ func (k *kBroker) Init(opts ...broker.Option) error {
 	return nil
 }
 
+func (k *kBroker) isConnected() bool {
+	k.scMutex.RLock()
+	defer k.scMutex.RUnlock()
+	return k.connected
+}
+
 func (k *kBroker) Options() broker.Options {
 	return k.opts
 }
 
 func (k *kBroker) Publish(topic string, msg *broker.Message, opts ...broker.PublishOption) error {
+	if !k.isConnected() {
+		return errors.New("[kafka] broker not connected")
+	}
+
 	b, err := k.opts.Codec.Marshal(msg)
 	if err != nil {
 		return err
 	}
+
 	_, _, err = k.p.SendMessage(&sarama.ProducerMessage{
 		Topic: topic,
 		Value: sarama.ByteEncoder(b),
 	})
+
 	return err
 }
 
@@ -198,13 +232,14 @@ func (k *kBroker) Subscribe(topic string, handler broker.Handler, opts ...broker
 				}
 			default:
 				err := cg.Consume(ctx, topics, h)
-				if err != nil {
+				switch err {
+				case sarama.ErrClosedConsumerGroup:
+					return
+				case nil:
+					continue
+				default:
 					log.Error(err)
 				}
-				if err == sarama.ErrClosedConsumerGroup {
-					return
-				}
-
 			}
 		}
 	}()

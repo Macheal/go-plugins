@@ -3,14 +3,15 @@ package nsq
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/micro/go-micro/v2/broker"
+	"github.com/micro/go-micro/v2/cmd"
 	"github.com/micro/go-micro/v2/codec/json"
-	"github.com/micro/go-micro/v2/config/cmd"
 	"github.com/nsqio/go-nsq"
 )
 
@@ -31,6 +32,7 @@ type publication struct {
 	m     *broker.Message
 	nm    *nsq.Message
 	opts  broker.PublishOptions
+	err   error
 }
 
 type subscriber struct {
@@ -94,7 +96,10 @@ func (n *nsqBroker) Options() broker.Options {
 }
 
 func (n *nsqBroker) Address() string {
-	return n.addrs[rand.Intn(len(n.addrs))]
+	if len(n.addrs) > 0 {
+		return n.addrs[rand.Intn(len(n.addrs))]
+	}
+	return "127.0.0.1:4150"
 }
 
 func (n *nsqBroker) Connect() error {
@@ -186,6 +191,10 @@ func (n *nsqBroker) Disconnect() error {
 }
 
 func (n *nsqBroker) Publish(topic string, message *broker.Message, opts ...broker.PublishOption) error {
+	if len(n.p) <= 0 {
+		return errors.New("no producer")
+	}
+
 	p := n.p[rand.Intn(len(n.p))]
 
 	options := broker.PublishOptions{}
@@ -265,11 +274,9 @@ func (n *nsqBroker) Subscribe(topic string, handler broker.Handler, opts ...brok
 			return err
 		}
 
-		return handler(&publication{
-			topic: topic,
-			m:     &m,
-			nm:    nm,
-		})
+		p := &publication{topic: topic, m: &m}
+		p.err = handler(p)
+		return p.err
 	})
 
 	c.AddConcurrentHandlers(h, concurrency)
@@ -311,6 +318,10 @@ func (p *publication) Message() *broker.Message {
 func (p *publication) Ack() error {
 	p.nm.Finish()
 	return nil
+}
+
+func (p *publication) Error() error {
+	return p.err
 }
 
 func (s *subscriber) Options() broker.SubscribeOptions {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/micro/go-micro/v2/broker"
+	"github.com/micro/go-micro/v3/broker"
 	nats "github.com/nats-io/nats.go"
 )
 
@@ -75,9 +75,9 @@ func TestInitAddrs(t *testing.T) {
 				br.Init()
 			}
 
-			natsBroker, ok := br.(*nbroker)
+			natsBroker, ok := br.(*natsBroker)
 			if !ok {
-				t.Fatal("Expected broker to be of types *nbroker")
+				t.Fatal("Expected broker to be of types *natsBroker")
 			}
 			// check if the same amount of addrs we set has actually been set, default
 			// have only 1 address nats://127.0.0.1:4222 (current nats code) or
@@ -94,6 +94,5 @@ func TestInitAddrs(t *testing.T) {
 				}
 			}
 		})
-
 	}
 }

@@ -3,7 +3,9 @@ package consul
 
 import (
 	"fmt"
+	"log"
 	"net"
+	"path/filepath"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/micro/go-micro/v2/store"
@@ -14,8 +16,15 @@ type ckv struct {
 	client  *api.Client
 }
 
-func (c *ckv) Init(...store.Option) error {
-	return nil
+func (c *ckv) Init(opts ...store.Option) error {
+	for _, o := range opts {
+		o(&c.options)
+	}
+	return c.configure()
+}
+
+func (c *ckv) Options() store.Options {
+	return c.options
 }
 
 func (c *ckv) Read(key string, opts ...store.ReadOption) ([]*store.Record, error) {
@@ -39,35 +48,63 @@ func (c *ckv) Read(key string, opts ...store.ReadOption) ([]*store.Record, error
 	return records, nil
 }
 
-func (c *ckv) Delete(key string) error {
-	_, err := c.client.KV().Delete(key, nil)
+func (c *ckv) Close() error {
+	// consul does not support close?
+	return nil
+}
+
+func (c *ckv) Delete(key string, opts ...store.DeleteOption) error {
+	options := store.DeleteOptions{}
+	options.Table = c.options.Table
+
+	for _, o := range opts {
+		o(&options)
+	}
+
+	_, err := c.client.KV().Delete(filepath.Join(options.Table, key), nil)
 	return err
 }
 
-func (c *ckv) Write(record *store.Record) error {
+func (c *ckv) Write(record *store.Record, opts ...store.WriteOption) error {
+	options := store.WriteOptions{}
+	options.Table = c.options.Table
+
+	for _, o := range opts {
+		o(&options)
+	}
+
 	_, err := c.client.KV().Put(&api.KVPair{
-		Key:   record.Key,
+		Key:   filepath.Join(options.Table, record.Key),
 		Value: record.Value,
 	}, nil)
 	return err
 }
 
-func (c *ckv) List() ([]*store.Record, error) {
-	keyval, _, err := c.client.KV().List("/", nil)
+func (c *ckv) List(opts ...store.ListOption) ([]string, error) {
+	options := store.ListOptions{}
+	options.Table = c.options.Table
+
+	for _, o := range opts {
+		o(&options)
+	}
+	if options.Table == "" {
+		options.Table = "/"
+	} else if options.Table[len(options.Table)-1] != '/' {
+		options.Table += "/"
+	}
+
+	keyval, _, err := c.client.KV().List(options.Table, nil)
 	if err != nil {
 		return nil, err
 	}
 	if keyval == nil {
 		return nil, store.ErrNotFound
 	}
-	var vals []*store.Record
+	var keys []string
 	for _, keyv := range keyval {
-		vals = append(vals, &store.Record{
-			Key:   keyv.Key,
-			Value: keyv.Value,
-		})
+		keys = append(keys, keyv.Key)
 	}
-	return vals, nil
+	return keys, nil
 }
 
 func (c *ckv) String() string {
@@ -80,8 +117,23 @@ func NewStore(opts ...store.Option) store.Store {
 		o(&options)
 	}
 
+	// new store
+	s := new(ckv)
+	// set the options
+	s.options = options
+
+	// configure the store
+	if err := s.configure(); err != nil {
+		log.Fatal(err)
+	}
+
+	// return store
+	return s
+}
+
+func (ckv *ckv) configure() error {
 	config := api.DefaultConfig()
-	nodes := options.Nodes
+	nodes := ckv.options.Nodes
 
 	// set host
 	if len(nodes) > 0 {
@@ -94,10 +146,12 @@ func NewStore(opts ...store.Option) store.Store {
 		}
 	}
 
-	client, _ := api.NewClient(config)
-
-	return &ckv{
-		options: options,
-		client:  client,
+	client, err := api.NewClient(config)
+	if err != nil {
+		return err
 	}
+
+	ckv.client = client
+
+	return nil
 }

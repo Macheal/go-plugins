@@ -16,9 +16,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/hashicorp/memberlist"
-	"github.com/micro/go-micro/v2/config/cmd"
+	"github.com/micro/go-micro/v2/cmd"
 	log "github.com/micro/go-micro/v2/logger"
 	"github.com/micro/go-micro/v2/registry"
+	regutil "github.com/micro/go-micro/v2/util/registry"
 	pb "github.com/micro/go-plugins/registry/gossip/v2/proto"
 	"github.com/mitchellh/hashstructure"
 )
@@ -631,7 +632,7 @@ func (g *gossipRegistry) run() {
 				g.services[u.Service.Name] = []*registry.Service{u.Service}
 
 			} else {
-				g.services[u.Service.Name] = registry.Merge(service, []*registry.Service{u.Service})
+				g.services[u.Service.Name] = regutil.Merge(service, []*registry.Service{u.Service})
 			}
 			g.Unlock()
 
@@ -650,7 +651,7 @@ func (g *gossipRegistry) run() {
 		case actionTypeDelete:
 			g.Lock()
 			if service, ok := g.services[u.Service.Name]; ok {
-				if services := registry.Remove(service, []*registry.Service{u.Service}); len(services) == 0 {
+				if services := regutil.Remove(service, []*registry.Service{u.Service}); len(services) == 0 {
 					delete(g.services, u.Service.Name)
 				} else {
 					g.services[u.Service.Name] = services
@@ -713,7 +714,7 @@ func (g *gossipRegistry) Register(s *registry.Service, opts ...registry.Register
 	if service, ok := g.services[s.Name]; !ok {
 		g.services[s.Name] = []*registry.Service{s}
 	} else {
-		g.services[s.Name] = registry.Merge(service, []*registry.Service{s})
+		g.services[s.Name] = regutil.Merge(service, []*registry.Service{s})
 	}
 	g.Unlock()
 
@@ -753,7 +754,7 @@ func (g *gossipRegistry) Register(s *registry.Service, opts ...registry.Register
 	return nil
 }
 
-func (g *gossipRegistry) Deregister(s *registry.Service) error {
+func (g *gossipRegistry) Deregister(s *registry.Service, opts ...registry.DeregisterOption) error {
 
 	log.Debugf("[gossip] Registry deregistering service: %s", s.Name)
 
@@ -764,7 +765,7 @@ func (g *gossipRegistry) Deregister(s *registry.Service) error {
 
 	g.Lock()
 	if service, ok := g.services[s.Name]; ok {
-		if services := registry.Remove(service, []*registry.Service{s}); len(services) == 0 {
+		if services := regutil.Remove(service, []*registry.Service{s}); len(services) == 0 {
 			delete(g.services, s.Name)
 		} else {
 			g.services[s.Name] = services
@@ -798,7 +799,7 @@ func (g *gossipRegistry) Deregister(s *registry.Service) error {
 	return nil
 }
 
-func (g *gossipRegistry) GetService(name string) ([]*registry.Service, error) {
+func (g *gossipRegistry) GetService(name string, opts ...registry.GetOption) ([]*registry.Service, error) {
 	g.RLock()
 	service, ok := g.services[name]
 	g.RUnlock()
@@ -808,7 +809,7 @@ func (g *gossipRegistry) GetService(name string) ([]*registry.Service, error) {
 	return service, nil
 }
 
-func (g *gossipRegistry) ListServices() ([]*registry.Service, error) {
+func (g *gossipRegistry) ListServices(opts ...registry.ListOption) ([]*registry.Service, error) {
 	g.RLock()
 	services := make([]*registry.Service, 0, len(g.services))
 	for _, service := range g.services {
